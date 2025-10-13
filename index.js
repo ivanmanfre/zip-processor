@@ -33,10 +33,7 @@ app.post('/process', upload.single('file'), async (req, res) => {
                 try {
                   const xml = Buffer.concat(chunks).toString('utf8');
                   const parsed = await parser.parseStringPromise(xml);
-                  
-                  // Clean the data
                   const cleaned = cleanProjectData(parsed);
-                  
                   xmlFiles.push({ 
                     fileName: entry.path, 
                     data: cleaned 
@@ -131,60 +128,10 @@ function cleanProjectData(data) {
         event: evt.Event?.[0],
         eventDate: evt.EventDate?.[0],
         eventTime: evt.EventTime?.[0]
-      }));
+      })).filter(e => e.event); // Remove empty events
     }
 
-    // Companies
-    if (project.Companies?.[0]?.Company) {
-      cleaned.companies = project.Companies[0].Company.map(company => {
-        const comp = {
-          name: company.$?.Name,
-          role: company.$?.Role || company.$?.BiddingRole,
-          url: company.$?.URL,
-          website: company.Website?.[0],
-          email: company.Email?.[0]
-        };
-
-        // Company Address (first one only)
-        if (company.Addresses?.[0]?.Address?.[0]) {
-          const addr = company.Addresses[0].Address[0];
-          comp.address = {
-            addressLine1: addr.AddressLine1?.[0],
-            addressLine2: addr.AddressLine2?.[0],
-            city: addr.City?.[0],
-            state: addr.StateProvince?.[0],
-            zipCode: addr.ZipPostalCode?.[0]
-          };
-        }
-
-        // Phone (not fax)
-        if (company.Phones?.[0]?.Phone) {
-          const mainPhone = company.Phones[0].Phone.find(p => 
-            p.$?.PhoneType === 'Company Phone Number'
-          );
-          if (mainPhone) {
-            comp.phone = mainPhone._;
-          }
-        }
-
-        // Contacts (filter out "DO NOT USE")
-        if (company.Contacts?.[0]?.Contact) {
-          comp.contacts = company.Contacts[0].Contact
-            .filter(c => !c.$?.Name?.includes('DO NOT USE'))
-            .map(contact => ({
-              name: contact.$?.Name,
-              email: contact.Email?.[0],
-              phone: contact.PhoneNumber?.[0],
-              linkedIn: contact.LinkedInURL?.[0]
-            }))
-            .filter(c => c.name); // Remove empty contacts
-        }
-
-        return comp;
-      });
-    }
-
-    // Scope/Details
+    // Scope
     if (project.Details?.[0]?.Detail) {
       const scopeDetail = project.Details[0].Detail.find(d => 
         d.$?.DetailType === 'Scope'
