@@ -33,7 +33,14 @@ app.post('/process', upload.single('file'), async (req, res) => {
                 try {
                   const xml = Buffer.concat(chunks).toString('utf8');
                   const parsed = await parser.parseStringPromise(xml);
-                  xmlFiles.push({ fileName: entry.path, data: parsed });
+                  
+                  // Clean the data
+                  const cleaned = cleanProjectData(parsed);
+                  
+                  xmlFiles.push({ 
+                    fileName: entry.path, 
+                    data: cleaned 
+                  });
                 } catch (e) {
                   console.error('Parse error:', e);
                 }
@@ -57,6 +64,141 @@ app.post('/process', upload.single('file'), async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+
+function cleanProjectData(data) {
+  if (!data.Projects || !data.Projects.Project) {
+    return data;
+  }
+
+  const projects = Array.isArray(data.Projects.Project) 
+    ? data.Projects.Project 
+    : [data.Projects.Project];
+
+  const cleanedProjects = projects.map(project => {
+    const cleaned = {
+      projectId: project.$?.ProjectID,
+      title: project.$?.Title,
+      stage: project.$?.Stage,
+      url: project.$?.URL,
+      updateDate: project.$?.UpdateDate,
+      updateText: project.$?.UpdateText,
+    };
+
+    // Valuation
+    if (project.Valuation?.[0]) {
+      cleaned.valuation = {
+        value: project.Valuation[0].$?.Value,
+        currency: project.Valuation[0].$?.Currency,
+        valueType: project.Valuation[0].$?.ValueType
+      };
+    }
+
+    // Parameters
+    if (project.Parameters?.[0]?.Parameter?.[0]?.$) {
+      const params = project.Parameters[0].Parameter[0].$;
+      cleaned.parameters = {
+        ownership: params.Ownership,
+        workType: params.WorkType,
+        commenceDate: params.CommenceDate,
+        completionDate: params.CompletionDate,
+        bidDate: params.BidDate,
+        bidTime: params.BidTime,
+        structures: params.Structures
+      };
+    }
+
+    // Primary Category
+    if (project.ParentCategories?.[0]?.PrimaryCategoryName?.[0]) {
+      cleaned.primaryCategory = project.ParentCategories[0].PrimaryCategoryName[0];
+    }
+
+    // Project Address
+    if (project.Addresses?.[0]?.Address?.[0]) {
+      const addr = project.Addresses[0].Address[0];
+      cleaned.projectAddress = {
+        addressLine1: addr.AddressLine1?.[0],
+        addressLine2: addr.AddressLine2?.[0],
+        city: addr.City?.[0],
+        state: addr.StateProvince?.[0],
+        zipCode: addr.ZipPostalCode?.[0],
+        country: addr.CountryRegion?.[0]
+      };
+    }
+
+    // Project Events (simplified)
+    if (project.ProjectEvents?.[0]?.ProjectEvent) {
+      cleaned.events = project.ProjectEvents[0].ProjectEvent.map(evt => ({
+        event: evt.Event?.[0],
+        eventDate: evt.EventDate?.[0],
+        eventTime: evt.EventTime?.[0]
+      }));
+    }
+
+    // Companies
+    if (project.Companies?.[0]?.Company) {
+      cleaned.companies = project.Companies[0].Company.map(company => {
+        const comp = {
+          name: company.$?.Name,
+          role: company.$?.Role || company.$?.BiddingRole,
+          url: company.$?.URL,
+          website: company.Website?.[0],
+          email: company.Email?.[0]
+        };
+
+        // Company Address (first one only)
+        if (company.Addresses?.[0]?.Address?.[0]) {
+          const addr = company.Addresses[0].Address[0];
+          comp.address = {
+            addressLine1: addr.AddressLine1?.[0],
+            addressLine2: addr.AddressLine2?.[0],
+            city: addr.City?.[0],
+            state: addr.StateProvince?.[0],
+            zipCode: addr.ZipPostalCode?.[0]
+          };
+        }
+
+        // Phone (not fax)
+        if (company.Phones?.[0]?.Phone) {
+          const mainPhone = company.Phones[0].Phone.find(p => 
+            p.$?.PhoneType === 'Company Phone Number'
+          );
+          if (mainPhone) {
+            comp.phone = mainPhone._;
+          }
+        }
+
+        // Contacts (filter out "DO NOT USE")
+        if (company.Contacts?.[0]?.Contact) {
+          comp.contacts = company.Contacts[0].Contact
+            .filter(c => !c.$?.Name?.includes('DO NOT USE'))
+            .map(contact => ({
+              name: contact.$?.Name,
+              email: contact.Email?.[0],
+              phone: contact.PhoneNumber?.[0],
+              linkedIn: contact.LinkedInURL?.[0]
+            }))
+            .filter(c => c.name); // Remove empty contacts
+        }
+
+        return comp;
+      });
+    }
+
+    // Scope/Details
+    if (project.Details?.[0]?.Detail) {
+      const scopeDetail = project.Details[0].Detail.find(d => 
+        d.$?.DetailType === 'Scope'
+      );
+      if (scopeDetail && scopeDetail._) {
+        cleaned.scope = scopeDetail._;
+      }
+    }
+
+    return cleaned;
+  });
+
+  return { projects: cleanedProjects };
+}
 
 const PORT = process.env.PORT || 3080;
 app.listen(PORT, '0.0.0.0', () => {
