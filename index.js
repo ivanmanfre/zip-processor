@@ -71,78 +71,14 @@ function cleanProjectData(data) {
     ? data.Projects.Project 
     : [data.Projects.Project];
 
-  const cleanedProjects = projects.map(project => {
-    const cleaned = {
-      projectId: project.$?.ProjectID,
-      title: project.$?.Title,
-      stage: project.$?.Stage,
-      url: project.$?.URL,
-      updateDate: project.$?.UpdateDate,
-      updateText: project.$?.UpdateText,
-    };
-
-    // Valuation
-    if (project.Valuation?.[0]) {
-      cleaned.valuation = {
-        value: project.Valuation[0].$?.Value,
-        currency: project.Valuation[0].$?.Currency,
-        valueType: project.Valuation[0].$?.ValueType
-      };
-    }
-
-    // Parameters
-    if (project.Parameters?.[0]?.Parameter?.[0]?.$) {
-      const params = project.Parameters[0].Parameter[0].$;
-      cleaned.parameters = {
-        ownership: params.Ownership,
-        workType: params.WorkType,
-        commenceDate: params.CommenceDate,
-        completionDate: params.CompletionDate,
-        bidDate: params.BidDate,
-        bidTime: params.BidTime,
-        structures: params.Structures
-      };
-    }
-
-    // Primary Category
-    if (project.ParentCategories?.[0]?.PrimaryCategoryName?.[0]) {
-      cleaned.primaryCategory = project.ParentCategories[0].PrimaryCategoryName[0];
-    }
-
-    // Project Address
-    if (project.Addresses?.[0]?.Address?.[0]) {
-      const addr = project.Addresses[0].Address[0];
-      cleaned.projectAddress = {
-        addressLine1: addr.AddressLine1?.[0],
-        addressLine2: addr.AddressLine2?.[0],
-        city: addr.City?.[0],
-        state: addr.StateProvince?.[0],
-        zipCode: addr.ZipPostalCode?.[0],
-        country: addr.CountryRegion?.[0]
-      };
-    }
-
-    // Project Events (simplified)
-    if (project.ProjectEvents?.[0]?.ProjectEvent) {
-      cleaned.events = project.ProjectEvents[0].ProjectEvent.map(evt => ({
-        event: evt.Event?.[0],
-        eventDate: evt.EventDate?.[0],
-        eventTime: evt.EventTime?.[0]
-      })).filter(e => e.event); // Remove empty events
-    }
-
-    // Scope
-    if (project.Details?.[0]?.Detail) {
-      const scopeDetail = project.Details[0].Detail.find(d => 
-        d.$?.DetailType === 'Scope'
-      );
-      if (scopeDetail && scopeDetail._) {
-        cleaned.scope = scopeDetail._;
-      }
-    }
-
-    return cleaned;
-  });
+  const cleanedProjects = projects.map(project => ({
+    projectId: project.$?.ProjectID,
+    title: project.$?.Title,
+    stage: project.$?.Stage,
+    url: project.$?.URL,
+    updateDate: project.$?.UpdateDate,
+    updateText: project.$?.UpdateText
+  }));
 
   return { projects: cleanedProjects };
 }
