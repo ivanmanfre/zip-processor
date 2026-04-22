@@ -2,8 +2,8 @@ const express = require('express');
 const multer = require('multer');
 const unzipper = require('unzipper');
 const xml2js = require('xml2js');
-const SftpClient = require('ssh2-sftp-client');
-const { Readable } = require('stream');
+const ftp = require('basic-ftp');
+const { Readable, PassThrough } = require('stream');
 
 const app = express();
 app.use(express.json());
@@ -28,27 +28,29 @@ app.post('/process', upload.single('file'), async (req, res) => {
   }
 });
 
-app.post('/process-sftp', async (req, res) => {
-  if (!process.env.SFTP_HOST || !process.env.SFTP_USER || !process.env.SFTP_PASSWORD) {
-    return res.status(500).json({ error: 'SFTP_HOST / SFTP_USER / SFTP_PASSWORD env vars not set' });
+app.post('/process-ftp', async (req, res) => {
+  if (!process.env.FTP_HOST || !process.env.FTP_USER || !process.env.FTP_PASSWORD) {
+    return res.status(500).json({ error: 'FTP_HOST / FTP_USER / FTP_PASSWORD env vars not set' });
   }
 
-  const sftp = new SftpClient();
+  const client = new ftp.Client(0);
+  client.ftp.verbose = false;
   try {
     const date = req.body?.date || formatToday();
     const remotePath = req.body?.path || `/Xpress_105622/1.4_DL_XpressSW3P_XML_${date}.zip`;
 
-    await sftp.connect({
-      host: process.env.SFTP_HOST,
-      port: Number(process.env.SFTP_PORT) || 22,
-      username: process.env.SFTP_USER,
-      password: process.env.SFTP_PASSWORD,
+    await client.access({
+      host: process.env.FTP_HOST,
+      port: Number(process.env.FTP_PORT) || 21,
+      user: process.env.FTP_USER,
+      password: process.env.FTP_PASSWORD,
+      secure: process.env.FTP_SECURE === 'true',
     });
 
     const zipStream = unzipper.Parse();
     const entriesPromise = collectXmlEntries(zipStream);
 
-    await sftp.get(remotePath, zipStream);
+    await client.downloadTo(zipStream, remotePath);
     const data = await entriesPromise;
 
     res.json({ success: true, filesProcessed: data.length, source: remotePath, data });
@@ -56,9 +58,7 @@ app.post('/process-sftp', async (req, res) => {
     console.error('Error:', error);
     res.status(500).json({ error: error.message });
   } finally {
-    try {
-      await sftp.end();
-    } catch (_) {}
+    client.close();
   }
 });
 
