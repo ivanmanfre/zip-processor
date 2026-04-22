@@ -2,7 +2,7 @@ const express = require('express');
 const multer = require('multer');
 const unzipper = require('unzipper');
 const xml2js = require('xml2js');
-const ftp = require('basic-ftp');
+const SftpClient = require('ssh2-sftp-client');
 const { Readable } = require('stream');
 
 const app = express();
@@ -28,28 +28,27 @@ app.post('/process', upload.single('file'), async (req, res) => {
   }
 });
 
-app.post('/process-ftp', async (req, res) => {
-  const client = new ftp.Client(0);
-  client.ftp.verbose = false;
+app.post('/process-sftp', async (req, res) => {
+  if (!process.env.SFTP_HOST || !process.env.SFTP_USER || !process.env.SFTP_PASSWORD) {
+    return res.status(500).json({ error: 'SFTP_HOST / SFTP_USER / SFTP_PASSWORD env vars not set' });
+  }
+
+  const sftp = new SftpClient();
   try {
     const date = req.body?.date || formatToday();
     const remotePath = req.body?.path || `/Xpress_105622/1.4_DL_XpressSW3P_XML_${date}.zip`;
 
-    if (!process.env.FTP_HOST || !process.env.FTP_USER || !process.env.FTP_PASSWORD) {
-      return res.status(500).json({ error: 'FTP_HOST / FTP_USER / FTP_PASSWORD env vars not set' });
-    }
-
-    await client.access({
-      host: process.env.FTP_HOST,
-      user: process.env.FTP_USER,
-      password: process.env.FTP_PASSWORD,
-      secure: process.env.FTP_SECURE === 'true',
+    await sftp.connect({
+      host: process.env.SFTP_HOST,
+      port: Number(process.env.SFTP_PORT) || 22,
+      username: process.env.SFTP_USER,
+      password: process.env.SFTP_PASSWORD,
     });
 
     const zipStream = unzipper.Parse();
     const entriesPromise = collectXmlEntries(zipStream);
 
-    await client.downloadTo(zipStream, remotePath);
+    await sftp.get(remotePath, zipStream);
     const data = await entriesPromise;
 
     res.json({ success: true, filesProcessed: data.length, source: remotePath, data });
@@ -57,7 +56,9 @@ app.post('/process-ftp', async (req, res) => {
     console.error('Error:', error);
     res.status(500).json({ error: error.message });
   } finally {
-    client.close();
+    try {
+      await sftp.end();
+    } catch (_) {}
   }
 });
 
